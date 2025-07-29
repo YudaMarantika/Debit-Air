@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard Debit Air</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #d0f0ff;
+      padding: 20px;
+      text-align: center;
+    }
+    h1, h2 {
+      color: #004d80;
+    }
+    .screen {
+      display: none;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+    .screen.active {
+      display: block;
+      opacity: 1;
+    }
+    .card {
+      background-color: #ffffff;
+      padding: 20px;
+      margin: 20px auto;
+      border-radius: 12px;
+      width: 320px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.15);
+    }
+    .value {
+      font-size: 2em;
+      margin: 10px 0;
+    }
+    .status {
+      font-weight: bold;
+      font-size: 1.2em;
+    }
+    .btn {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 1em;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-on {
+      background-color: #4CAF50;
+      color: white;
+    }
+    .btn-off {
+      background-color: #f44336;
+      color: white;
+    }
+    .nav-btn {
+      background-color: #0077cc;
+      color: white;
+      font-size: 1.1em;
+    }
+    canvas {
+      margin-top: 30px;
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Welcome Screen -->
+  <div id="welcomeScreen" class="screen active">
+    <h1>Selamat Datang di Website Sistem Kontrol & Monitoring Penggunaan Debit Air Berbasis IoT</h1>
+    <button class="btn nav-btn" onclick="showScreen('monitoringScreen')">Monitoring</button>
+    <button class="btn nav-btn" onclick="showScreen('controlScreen')">Control</button>
+  </div>
+
+  <!-- Monitoring Screen -->
+  <div id="monitoringScreen" class="screen">
+    <h1>Monitoring Debit Air</h1>
+
+    <div class="card">
+      <h2>Flow Rate</h2>
+      <div class="value" id="flowRate">0</div>
+      <div>L/min</div>
+    </div>
+
+    <div class="card">
+      <h2>Volume Air</h2>
+      <div class="value" id="volume">0</div>
+      <div>mL</div>
+    </div>
+
+    <canvas id="flowChart" width="400" height="200"></canvas>
+
+    <button class="btn nav-btn" onclick="showScreen('welcomeScreen')">Kembali</button>
+  </div>
+
+  <!-- Control Screen -->
+  <div id="controlScreen" class="screen">
+    <h1>Kontrol Pompa & Valve</h1>
+
+    <div class="card">
+      <h2>Status Pompa</h2>
+      <div id="statusPompa" class="status" style="color: gray;">Tidak Diketahui</div>
+    </div>
+
+    <div class="card">
+      <h2>Status Valve</h2>
+      <div id="statusValve" class="status" style="color: gray;">Tidak Diketahui</div>
+    </div>
+
+    <div class="card">
+      <h2>Kontrol Manual</h2>
+      <p><strong>Pompa:</strong></p>
+      <button class="btn btn-on" onclick="setPompa('ON')">Pompa ON</button>
+      <button class="btn btn-off" onclick="setPompa('OFF')">Pompa OFF</button>
+
+      <p><strong>Valve:</strong></p>
+      <button class="btn btn-on" onclick="setValve('ON')">Valve ON</button>
+      <button class="btn btn-off" onclick="setValve('OFF')">Valve OFF</button>
+    </div>
+
+    <button class="btn nav-btn" onclick="showScreen('welcomeScreen')">Kembali</button>
+  </div>
+
+  <!-- Firebase & Logic -->
+  <script>
+    // GANTI DENGAN KONFIGURASI FIREBASE MILIK ANDA
+    const firebaseConfig = {
+      apiKey: "AIzaSyBfae3YxqZwHpeCa0HF1AU4FoPgf3fEEvU",
+      authDomain: "ngetest-635d5.firebaseapp.com",
+      databaseURL: "https://ngetest-635d5-default-rtdb.firebaseio.com",
+      projectId: "ngetest-635d5",
+      storageBucket: "ngetest-635d5.firebasestorage.app",
+      messagingSenderId: "92977240264",
+      appId: "1:92977240264:web:ac06f08d25a2f701d06dfd"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const flowRateDisplay = document.getElementById("flowRate");
+    const volumeDisplay = document.getElementById("volume");
+    const statusPompaDisplay = document.getElementById("statusPompa");
+    const statusValveDisplay = document.getElementById("statusValve");
+
+    let chart = null;
+    let chartData = {
+      labels: [],
+      datasets: [{
+        label: 'Flow Rate (L/min)',
+        data: [],
+        backgroundColor: 'rgba(0, 123, 255, 0.2)',
+        borderColor: 'rgba(0, 123, 255, 1)',
+        borderWidth: 2,
+        tension: 0.3
+      }]
+    };
+
+    // Init Chart
+    function initChart() {
+      const ctx = document.getElementById('flowChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+
+    // Update Chart
+    function updateChart(value) {
+      const time = new Date().toLocaleTimeString();
+      chart.data.labels.push(time);
+      chart.data.datasets[0].data.push(value);
+      if (chart.data.labels.length > 10) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+      }
+      chart.update();
+    }
+
+    // Realtime update flow & volume
+    db.ref("/flow_monitoring").on("value", (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const flowRate = parseFloat(data.flow_rate || 0);
+        flowRateDisplay.textContent = flowRate.toFixed(2);
+        volumeDisplay.textContent = parseFloat(data.volume_ml || 0).toFixed(0);
+        updateChart(flowRate);
+      }
+    });
+
+    // Realtime status pompa
+    db.ref("/kontrol/pompa").on("value", (snapshot) => {
+      const state = snapshot.val();
+      statusPompaDisplay.textContent = state || "Tidak Diketahui";
+      statusPompaDisplay.style.color = state === "ON" ? "green" : "red";
+    });
+
+    // Realtime status valve
+    db.ref("/kontrol/valve").on("value", (snapshot) => {
+      const state = snapshot.val();
+      statusValveDisplay.textContent = state || "Tidak Diketahui";
+      statusValveDisplay.style.color = state === "ON" ? "green" : "red";
+    });
+
+    // Fungsi kontrol
+    function setPompa(state) {
+      db.ref("/kontrol").update({ pompa: state });
+    }
+    function setValve(state) {
+      db.ref("/kontrol").update({ valve: state });
+    }
+
+    // Navigasi antar screen + animasi
+    function showScreen(screenId) {
+      document.querySelectorAll(".screen").forEach(screen => {
+        screen.classList.remove("active");
+      });
+      setTimeout(() => {
+        document.getElementById(screenId).classList.add("active");
+      }, 100); // delay untuk animasi
+    }
+
+    // Init Chart saat halaman dimuat
+    window.onload = initChart;
+  </script>
+</body>
+</html>
